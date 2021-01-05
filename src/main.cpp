@@ -75,43 +75,44 @@ public:
 uint32_t SystemCoreClock = 72000000;
 uint32_t TotalHeapSize = (17 * 1024);
 // limero setup
-Thread mainThread({"main", 500, 20,configMAX_PRIORITIES - 2});
+Thread mainThread({"main", 1024, 20, configMAX_PRIORITIES - 2});
 TimerSource logSomething(mainThread, 1000, true, "logSomething");
-Thread usbThread({"usb", 500, 20,configMAX_PRIORITIES - 1});
+Thread usbThread({"usb", 1024, 20, configMAX_PRIORITIES - 1});
 Usb usb(usbThread);
-MqttSerial mqtt(mainThread);
+// MqttSerial mqtt(mainThread);
 Blinker blinker(mainThread);
 Log logger(256);
 
-class EchoTest : public Actor {
- public:
-  TimerSource trigger;
-  ValueSource<uint64_t> counter;
-  uint64_t startTime;
-  EchoTest(Thread &thread)
-      : Actor(thread), trigger(thread, 1000, true, "trigger"){};
-  void init() {
-    trigger >> [&](const TimerMsg &) {
-      INFO(" send ");
-      counter = Sys::millis();
-    };
-    counter >> mqtt.toTopic<uint64_t>("echo/output");
-/*    mqtt.fromTopic<uint64_t>("src/stm32/echo/output") >>
-        [&](const uint64_t in) {
-          INFO(" it took %lu msec ", Sys::millis() - in);
-        };*/
-  }
+class EchoTest : public Actor
+{
+public:
+	TimerSource trigger;
+	ValueSource<uint64_t> counter;
+	uint64_t startTime;
+	EchoTest(Thread &thread)
+		: Actor(thread), trigger(thread, 1000, true, "trigger"){};
+	void init()
+	{
+		trigger >> [&](const TimerMsg &) {
+			INFO(" send ");
+			counter = Sys::millis();
+		};
+/*		counter >> mqtt.toTopic<uint64_t>("src/stm32/echo/output");
+		mqtt.fromTopic<uint64_t>("src/stm32/echo/output") >>
+			[&](const uint64_t in) {
+				INFO(" it took %lu msec ", Sys::millis() - in);
+			};*/
+	}
 };
 
-EchoTest echoTest(mainThread);
-
+// EchoTest echoTest(mainThread);
 
 void *__dso_handle;
 
 void usbWriter(char *buffer, uint32_t bufLength)
 {
 	std::string line = std::string(buffer, bufLength);
-	usb.txdLine.on(line); 
+	usb.txdLine.on(line);
 }
 
 int main(void)
@@ -122,16 +123,23 @@ int main(void)
 	rcc_periph_clock_enable(RCC_GPIOB);
 	rcc_periph_clock_enable(RCC_GPIOC);
 
-
 	usb.init();
 	blinker.init();
-	mqtt.init();
-	echoTest.init();
-	usb.rxdLine >> mqtt.rxdLine;
-	mqtt.txdLine >> usb.txdLine;
+//	mqtt.init();
+//	echoTest.init();
+//	usb.rxdLine >> mqtt.rxdLine;
+//	mqtt.txdLine >> usb.txdLine;
 
-	logSomething >> [&](const TimerMsg &) { INFO(" free stack  %d", uxTaskGetStackHighWaterMark(0)); };
-	logSomething.start();
+	logSomething >> [&](const TimerMsg &) { 
+		INFO(" free stack  %d", uxTaskGetStackHighWaterMark(0)); 
+		INFO("%d / %d / %d / %d / %d / %d / %d",   stats.bufferOverflow ,
+   stats.bufferPushBusy ,
+   stats.bufferPopBusy ,
+   stats.threadQueueOverflow ,
+   stats.bufferPushCasFailed ,
+   stats.bufferPopCasFailed ,
+   stats.bufferCasRetries ); };
+//	logSomething.start();
 	mainThread.start();
 	usbThread.start();
 	vTaskStartScheduler();

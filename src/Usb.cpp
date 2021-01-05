@@ -152,13 +152,25 @@ static const char *usb_strings[] = {
 
 Usb *Usb::usb1;
 
-Usb::Usb(Thread &thread) : Actor(thread), _poller(thread, 1, true, "poller")
+Usb::Usb(Thread &thread) : Actor(thread), txdLine(10), txd(128), rxd(128), _poller(thread, 1, true, "poller")
 {
     usb1 = this;
 }
 
+extern "C" void usb_lp_can_rx0_isr(void)
+{
+    usbd_poll(Usb::usb1->usbd_dev);
+}
+
+extern "C" void usb_wakeup_isr(void)
+{
+    usbd_poll(Usb::usb1->usbd_dev);
+}
+
 int Usb::init()
 {
+
+    //
     /* Setup pin to pull up the D+ high, so autodect works
 	 * with the bootloader.  The circuit is active low. */
     gpio_set_mode(USB_PUP_PORT, GPIO_MODE_OUTPUT_2_MHZ,
@@ -168,11 +180,18 @@ int Usb::init()
     usbd_dev = usbd_init(&st_usbfs_v1_usb_driver, &dev, &config, usb_strings, 3, usbd_control_buffer, sizeof(usbd_control_buffer));
     usbd_register_set_config_callback(usbd_dev, cdcacm_set_config);
     usbd_register_sof_callback(usbd_dev, cdcacm_sof_callback);
+    nvic_enable_irq(NVIC_USB_LP_CAN_RX0_IRQ);
+    nvic_enable_irq(NVIC_USB_WAKEUP_IRQ);
+
+    // Enable USB by raising up D+ via a 1.5K resistor. This is done on the
+    // WaveShare board by removing the USB EN jumper and  connecting PC0 to the
+    // right hand pin of the jumper port with a patch wire. By setting PC0 to
+    // open drain it turns on an NFET which pulls  up D+ via a 1.5K resistor.
 
     for (int i = 0; i < 0x800000; i++)
         __asm__("nop");
     gpio_clear(GPIOC, GPIO11);
-    _poller >> [&](const TimerMsg &) { usbd_poll(usbd_dev); };
+    //   _poller >> [&](const TimerMsg &) { usbd_poll(usbd_dev); };
     txdLine.async(thread(), [&](const std::string &s) {
         for (uint32_t i = 0; i < s.length(); i++)
             txd.push(s[i]);
@@ -239,7 +258,8 @@ void Usb::cdcacm_data_rx_cb(usbd_device *usbd_dev, uint8_t ep)
             {
                 line += (char)b;
             }
-            if ( line.length()>0) usb1->rxdLine = line;
+            if (line.length() > 0)
+                usb1->rxdLine = line;
         }
         else
             usb1->rxd.push(buf[idx]);
@@ -254,7 +274,7 @@ void Usb::cdcacm_sof_callback(void)
         return;
     }
     int len = 0;
-    uint8_t b;
+    uint8_t b=0;
     while (usb1->txd.pop(b) == 0 && len <= 64)
     {
         usb1->usb_serial_tx_buf[len] = b;
@@ -278,6 +298,7 @@ void Usb::cdcacm_sof_callback(void)
     usb1->usb_serial_need_empty_tx = (sent == 64);
     if (sent != len)
     {
+        usb1->txd.push('?');
     };
 }
 

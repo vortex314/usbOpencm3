@@ -145,6 +145,6 @@ standard names - or at least those used in the unmodified vector table. */
 
 #define vPortSVCHandler sv_call_handler
 #define xPortPendSVHandler pend_sv_handler
-#define xPortSysTickHandler sys_tick_handler
+#define xPortSysTickHandler sys_tick_handler 
 
 #endif /* FREERTOS_CONFIG_H */
